@@ -1,7 +1,14 @@
-Mass Spectrometry Imaging (MSI) Visualizer is a Python package designed to visualize and analyze mass spectrometry imaging data stored in imzML format. The tool enables researchers to explore molecular distributions across tissue samples through an interactive visualization interface.
+Mass-spec-imaging-viewer is a Python package designed to visualize and analyze mass spectrometry imaging data stored in imzML format. The tool enables researchers to explore molecular distributions across tissue samples through an interactive visualization interface.
 
 Let's look at how the visualization workflow operates:
+
+
+
 ![image](https://github.com/user-attachments/assets/0411ba30-46c2-4ea4-8719-043a6fddf091)
+
+
+
+
 
 
 The diagram above illustrates the key components of the MSI Visualizer:
@@ -28,14 +35,21 @@ visualizer = MSIVisualizer("path/to/your/file.imzml")
 visualizer.update_plot()
 
 # Explore different m/z values
-visualizer.set_mz(500)  # View distribution of m/z 500
-visualizer.set_mz(283.26)  # View distribution of m/z 283.26
-Features
+
 Interactive visualization of mass spectrometry imaging data
 Real-time m/z value adjustment
 Automatic intensity normalization
 Efficient batch processing for large datasets
 Customizable visualization parameters
+
+#Example: Fingerprint 25x25 micron spatial resolution image aquired using SELECT SERIES MALDI MRT
+
+
+
+![image](https://github.com/user-attachments/assets/f739d82e-1f8c-4739-81a7-e1d1f754f37f)
+
+
+
 
 Requirements
 Python 3.x

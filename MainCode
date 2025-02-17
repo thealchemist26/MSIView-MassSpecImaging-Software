@@ -1,0 +1,110 @@
+from pyimzml.ImzMLParser import ImzMLParser
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+class MSIVisualizer:
+    def __init__(self, file_path):
+        """Initialize with file path and setup visualization"""
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"imzML file not found: {file_path}")
+            
+        try:
+            self.parser = ImzMLParser(file_path)
+            self.mz_min, self.mz_max = self.get_mz_range()
+            self.current_mz = (self.mz_max - self.mz_min) / 2
+            self.normalize = False
+            
+            # Setup the plot
+            self.fig, self.ax = plt.subplots(figsize=(12, 6))
+            self.scatter = None
+            self.colorbar = None
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize MSI visualizer: {str(e)}")
+
+    def get_mz_range(self):
+        """Get the m/z range from the first spectrum"""
+        try:
+            mz_values, _ = self.parser.getspectrum(0)
+            return min(mz_values), max(mz_values)
+        except Exception as e:
+            raise RuntimeError(f"Failed to get m/z range: {str(e)}")
+
+    def generate_image_data(self, mz_value, normalize=False):
+        """Generate image data efficiently"""
+        x_coords, y_coords = zip(*[(x, y) for x, y, _ in self.parser.coordinates])
+        intensity_map = []
+        
+        # Precompute the m/z range mask
+        mz_mask = (mz_value - 0.1, mz_value + 0.1)
+        
+        for i, _ in enumerate(self.parser.coordinates):
+            try:
+                mz_values, intensities = self.parser.getspectrum(i)
+                
+                # Vectorized operations for efficiency
+                mask = (mz_values >= mz_mask[0]) & (mz_values <= mz_mask[1])
+                if np.any(mask):
+                    intensity = np.sum(intensities[mask])
+                    if normalize:
+                        intensity = intensity / np.sum(intensities)
+                else:
+                    intensity = 0
+                    
+                intensity_map.append(intensity)
+            except Exception as e:
+                print(f"Warning: Skipping spectrum {i} due to error: {str(e)}")
+                intensity_map.append(0)
+        
+        return np.array(x_coords), np.array(y_coords), np.array(intensity_map)
+
+    def update_plot(self):
+        """Update the visualization"""
+        try:
+            self.ax.clear()
+            
+            # Generate and plot data
+            x, y, intensity = self.generate_image_data(self.current_mz, self.normalize)
+            self.scatter = self.ax.scatter(x, y, c=intensity, cmap='viridis', marker='s')
+            
+            # Add colorbar
+            if hasattr(self, 'colorbar') and self.colorbar is not None:
+                try:
+                    self.colorbar.remove()
+                except AttributeError:
+                    pass
+            
+            self.colorbar = plt.colorbar(self.scatter, ax=self.ax)
+            self.colorbar.set_label('Intensity')
+            
+            # Update title and labels
+            self.ax.set_title(f'MSI Image for m/z {self.current_mz:.2f}')
+            self.ax.set_xlabel('X Coordinate')
+            self.ax.set_ylabel('Y Coordinate')
+            
+            # Force redraw
+            self.fig.canvas.draw_idle()
+        except Exception as e:
+            raise RuntimeError(f"Failed to update plot: {str(e)}")
+
+    def set_mz(self, mz_value):
+        """Set the m/z value and update the plot"""
+        if self.mz_min <= mz_value <= self.mz_max:
+            self.current_mz = mz_value
+            self.update_plot()
+        else:
+            print(f"Warning: m/z value must be between {self.mz_min:.2f} and {self.mz_max:.2f}")
+
+# Usage example
+file_path = r"C:\Users\Rohit\OneDrive - Sheffield Hallam University\Data Processing\8FEB_FP_pore_25um_2_1.imzml"
+visualizer = MSIVisualizer(file_path)
+
+# Display initial plot
+visualizer.update_plot()
+
+# Example: Change m/z value to 500
+visualizer.set_mz(500)
+
+# Example: Change m/z value to 800
+visualizer.set_mz(283.26)

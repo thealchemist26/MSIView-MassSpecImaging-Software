@@ -50,6 +50,12 @@ Customizable visualization parameters
 
 
 
+Software Progress 
+
+![image](https://github.com/user-attachments/assets/48028c0e-3451-480d-bd85-2bd105d427fc)
+
+
+
 
 Requirements
 Python 3.x

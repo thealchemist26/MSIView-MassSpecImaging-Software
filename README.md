@@ -42,7 +42,7 @@ Automatic intensity normalization
 Efficient batch processing for large datasets
 Customizable visualization parameters
 
-#Example: Fingerprint 25x25 micron spatial resolution image aquired using SELECT SERIES MALDI MRT
+#Example: Fingerprint ridge area 25x25 micron spatial resolution image aquired using SELECT SERIES MALDI MRT
 
 
 

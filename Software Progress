@@ -1,0 +1,213 @@
+from pyimzml.ImzMLParser import ImzMLParser
+import numpy as np
+import plotly.graph_objects as go
+from ipywidgets import FloatSlider, HBox, VBox, Button, Textarea, Layout
+from IPython.display import display
+import os
+
+class MSIVisualizer:
+    def __init__(self, file_path):
+        """Initialize with file path and setup visualization"""
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"imzML file not found: {file_path}")
+            
+        try:
+            self.parser = ImzMLParser(file_path)
+            self.mz_min, self.mz_max = self.get_mz_range()
+            self.current_mz = (self.mz_max - self.mz_min) / 2
+            self.normalize = False
+            
+            # Setup the plot with better initial zoom
+            self.fig = go.FigureWidget(data=[],
+                layout=go.Layout(
+                    height=800,
+                    width=800,
+                    showlegend=False,
+                    xaxis_title='X Coordinate',
+                    yaxis_title='Y Coordinate',
+                    margin=dict(l=50, r=50, t=50, b=50)
+                ))
+            
+            # Create widgets with proper event handling
+            self.mz_slider = FloatSlider(
+                value=self.current_mz,
+                min=self.mz_min,
+                max=self.mz_max,
+                step=0.1,
+                description='m/z:',
+                continuous_update=False,
+                orientation='horizontal'
+            )
+            
+            self.mz_text = Textarea(
+                value=str(self.current_mz),
+                placeholder='Enter m/z value',
+                description='m/z:',
+                layout=Layout(width='150px')
+            )
+            
+            self.norm_checkbox = Button(
+                value=False,
+                description='Normalize',
+                layout=Layout(width='150px')
+            )
+            
+            # Connect widget events
+            self.mz_slider.observe(self._on_mz_change, names='value')
+            self.mz_text.observe(self._on_mz_change, names='value')
+            self.norm_checkbox.observe(self._on_norm_change, names='value')
+            
+            # Setup widget layouts
+            self.controls = HBox([self.mz_slider, self.mz_text, self.norm_checkbox])
+            
+            # Initialize plot with better default view
+            self.update_plot()
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize MSI visualizer: {str(e)}")
+
+    def get_mz_range(self):
+        """Get the m/z range from the first spectrum"""
+        try:
+            mz_values, _ = self.parser.getspectrum(0)
+            return min(mz_values), max(mz_values)
+        except Exception as e:
+            raise RuntimeError(f"Failed to get m/z range: {str(e)}")
+
+    def generate_image_data(self, mz_value, normalize=False):
+        """Generate image data efficiently"""
+        x_coords, y_coords = zip(*[(x, y) for x, y, _ in self.parser.coordinates])
+        intensity_map = []
+        
+        # Precompute the m/z range mask
+        mz_mask = (mz_value - 0.1, mz_value + 0.1)
+        
+        for i, _ in enumerate(self.parser.coordinates):
+            try:
+                mz_values, intensities = self.parser.getspectrum(i)
+                
+                # Vectorized operations for efficiency
+                mask = (mz_values >= mz_mask[0]) & (mz_values <= mz_mask[1])
+                if np.any(mask):
+                    intensity = np.sum(intensities[mask])
+                    if normalize:
+                        # TIC normalization: divide by total ion count
+                        tic = np.sum(intensities)
+                        intensity = intensity / tic if tic > 0 else 0
+                else:
+                    intensity = 0
+                    
+                intensity_map.append(intensity)
+            except Exception as e:
+                print(f"Warning: Skipping spectrum {i} due to error: {str(e)}")
+                intensity_map.append(0)
+        
+        return np.array(x_coords), np.array(y_coords), np.array(intensity_map)
+
+    def update_plot(self):
+        """Update the visualization"""
+        try:
+            self.fig.data = []
+            
+            # Generate and plot data
+            x, y, intensity = self.generate_image_data(
+                self.current_mz, 
+                self.normalize
+            )
+            
+            # Calculate optimal zoom level
+            x_range = max(x) - min(x)
+            y_range = max(y) - min(y)
+            padding = max(x_range, y_range) * 0.1
+            
+            # Create heatmap-like visualization with no gaps
+            scatter = go.Scatter(
+                x=x,
+                y=y,
+                mode='markers',
+                marker=dict(
+                    symbol='square',
+                    size=15,  # Increased size to fill gaps
+                    color=intensity,
+                    colorscale='Viridis',
+                    showscale=True,
+                    colorbar=dict(title='Intensity'),
+                    line=dict(width=0)  # No border
+                ),
+                text=[f'm/z: {self.current_mz:.2f}' for _ in range(len(x))]
+            )
+            
+            self.fig.add_trace(scatter)
+            
+            # Set optimal view
+            self.fig.update_layout(
+                title=f'MSI Image for m/z {self.current_mz:.2f}',
+                xaxis=dict(
+                    range=[min(x)-padding, max(x)+padding],
+                    autorange=False,
+                    showgrid=False,  # Hide grid lines
+                    zeroline=False    # Hide zero line
+                ),
+                yaxis=dict(
+                    range=[min(y)-padding, max(y)+padding],
+                    autorange=False,
+                    showgrid=False,  # Hide grid lines
+                    zeroline=False    # Hide zero line
+                ),
+                hovermode='closest'
+            )
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to update plot: {str(e)}")
+
+    def _on_mz_change(self, change):
+        """Handle m/z value changes from widgets"""
+        try:
+            if isinstance(change['owner'], FloatSlider):
+                self.current_mz = change['new']
+                self.mz_text.value = str(self.current_mz)
+            else:
+                self.current_mz = float(change['new'])
+                self.mz_slider.value = self.current_mz
+            self.update_plot()
+        except ValueError:
+            print("Invalid m/z value. Please enter a number.")
+
+    def _on_norm_change(self, change):
+        """Handle normalization toggle"""
+        self.normalize = change['new']
+        self.update_plot()
+
+    def set_mz(self, mz_value):
+        """Set the m/z value and update the plot"""
+        if self.mz_min <= mz_value <= self.mz_max:
+            self.current_mz = mz_value
+            self.mz_slider.value = mz_value
+            self.mz_text.value = str(mz_value)
+            self.update_plot()
+        else:
+            print(f"Warning: m/z value must be between {self.mz_min:.2f} and {self.mz_max:.2f}")
+
+# Usage example
+file_path = r"C:\Users\Rohit\OneDrive - Sheffield Hallam University\Data Processing\8FEB_FP_pore_25um_2_1.imzml"
+visualizer = MSIVisualizer(file_path)
+
+# Display widgets and plot
+display(visualizer.controls)
+display(visualizer.fig)
+
+# Example: Change m/z value to 500
+visualizer.set_mz(500)
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -123,7 +123,7 @@ The Processing section feeds into all visualization components, allowing real-ti
 
 ###  Key Features
 
-1. **Data Processing**```python
+1. **Data Processing** ``` python
 def generate_image_data(self, mz_value, normalize=False):
     """Generate image data efficiently."""
     # Precompute the m/z range mask

@@ -255,6 +255,8 @@ This documentation provides a comprehensive guide to using the MSIVisualizer for
   - Consider using a smaller dataset
   - Check system resources
 
+###  Examples of MSIview Visualisation 
+
 Example of MSI (showing a 1000 ng/mL spot of clozapine) Imaged on the SELECT SERIES MALDI MRT 
 
 ![newplot](https://github.com/user-attachments/assets/51691e6b-c2c1-46a5-9629-d37a83e3e740)

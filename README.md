@@ -68,8 +68,6 @@ flowchart TD
 ```
 
 
-
-
 The diagram above illustrates the visualizer's architecture, where:
 
 - Blue components handle input data processing
@@ -177,8 +175,6 @@ def find_peaks_in_view(self):
 
 1. **Initialization**```python
 visualizer = MSIVisualizer()
-```
-
 
 2. **Basic Navigation**  - Use the m/z slider or text input to explore different mass-to-charge ratios
   - Toggle TIC normalization for relative intensity comparison
@@ -193,7 +189,6 @@ visualizer = MSIVisualizer()
 4. **Data Processing**  - Apply baseline correction for drift removal
   - Use noise reduction for signal smoothing
   - Adjust intensity ranges for better visualization
-
 
 
 ###  Customization Options

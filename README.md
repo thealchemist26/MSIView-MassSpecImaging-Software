@@ -264,7 +264,7 @@ Example of MSI (showing a 1000 ng/mL spot of clozapine) Imaged on the SELECT SER
 
 Example of the average spectra showing the clozapine peak at m/z 327.14 
 
-![newplot (1)](https://github.com/user-attachments/assets/ad64e83e-dd56-4c35-9531-3b573c6f442f)
+![newplot (5)](https://github.com/user-attachments/assets/744a7e81-ab85-46c2-a844-1afa3012c5b9)
 
 
 Example of MSI visualisation of fingermark section showing the ridges at 25 x 25 micron resolution Imaged on the SELECT SERIES MALDI MRT 

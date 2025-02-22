@@ -1,4 +1,4 @@
-The MSIVisualizer is a Python class that provides an interactive visualization tool for Mass Spectrometry Imaging (MSI) data. It combines GUI controls with real-time visualization capabilities to help researchers analyze MSI data through both spatial and spectral views.
+The MSIView is a Python script (Jupyternotebook-based) that provides an interactive visualization tool for Mass Spectrometry Imaging (MSI) data. It combines GUI controls with real-time visualization capabilities to help researchers analyze MSI data through both spatial and spectral views.
 
 ###  System Architecture
 

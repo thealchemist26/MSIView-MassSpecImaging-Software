@@ -1,7 +1,9 @@
+#MSIView Version 1.0 (beta)
+%matplotlib widget
 from pyimzml.ImzMLParser import ImzMLParser
 import numpy as np
 import plotly.graph_objects as go
-from ipywidgets import FloatSlider, HBox, VBox, Button, Text, Textarea, Layout, Output, Tab, FloatRangeSlider, FloatProgress, Label, Dropdown
+from ipywidgets import FloatSlider, HBox, VBox, Button, Text, Textarea, Layout, Output, Tab, FloatRangeSlider, FloatProgress, Label, Dropdown, IntSlider, SelectMultiple
 from IPython.display import display
 import os
 import plotly.io as pio
@@ -12,6 +14,7 @@ from tkinter import filedialog
 import time
 from collections import defaultdict
 from scipy.ndimage import rotate
+from scipy.signal import savgol_filter, detrend
 
 pio.renderers.default = "notebook_connected"
 
@@ -66,6 +69,7 @@ class MSIVisualizer:
 
             # Calculate average spectrum with progress updates
             self.full_mz, self.avg_intensity = self.calculate_average_spectrum_with_progress()
+            self.original_avg_intensity = self.avg_intensity.copy() # Store original avg intensity for reset
 
             self.current_mz = (self.mz_max - self.mz_min) / 2
             self.normalize = False
@@ -75,6 +79,51 @@ class MSIVisualizer:
             self.spectrum_plot_type = 'line' # Default plot type for spectrum
             self.current_colormap = 'Viridis' # Default colormap for MSI image
             self.current_rotation_angle = 0 # Initial rotation angle
+
+            # --- Peak Label Customization ---
+            self.label_color_dropdown = Dropdown(
+                options=['black', 'red', 'blue', 'green'],
+                value='black',
+                description='Label Color:',
+                layout=Layout(width='150px')
+            )
+            self.label_color_dropdown.observe(self.on_peak_label_change, names='value')
+
+            self.label_fontsize_slider = IntSlider(
+                value=12,
+                min=8,
+                max=20,
+                step=1,
+                description='Label Size:',
+                continuous_update=False,
+                orientation='horizontal'
+            )
+            self.label_fontsize_slider.observe(self.on_peak_label_change, names='value')
+
+            self.peak_properties_dropdown = SelectMultiple(
+                options=['m/z', 'm/z + intensity'],
+                value=['m/z'],
+                description='Label Props:',
+                layout=Layout(width='200px')
+            )
+            self.peak_properties_dropdown.observe(self.on_peak_label_change, names='value')
+
+            # --- Spectrum Preprocessing ---
+            self.baseline_correction_dropdown = Dropdown(
+                options=['None', 'Detrend'],
+                value='None',
+                description='Baseline Corr:',
+                layout=Layout(width='150px')
+            )
+            self.baseline_correction_dropdown.observe(self.on_preprocess_change, names='value')
+
+            self.noise_reduction_dropdown = Dropdown(
+                options=['None', 'Savitzky-Golay'],
+                value='None',
+                description='Noise Reduct:',
+                layout=Layout(width='150px')
+            )
+            self.noise_reduction_dropdown.observe(self.on_preprocess_change, names='value')
 
             # --- MSI Image Setup ---
             self.fig = go.FigureWidget(
@@ -124,7 +173,7 @@ class MSIVisualizer:
                 continuous_update=False,
                 orientation='horizontal'
             )
-            self.intensity_range_slider.observe(self._on_intensity_range_change, names='value')
+            self.intensity_range_slider.observe(self.on_intensity_range_change, names='value')
 
             # --- Colormap Dropdown for MSI Image ---
             self.colormap_dropdown = Dropdown(
@@ -133,7 +182,7 @@ class MSIVisualizer:
                 description='Colormap:',
                 layout=Layout(width='150px')
             )
-            self.colormap_dropdown.observe(self._on_colormap_change, names='value')
+            self.colormap_dropdown.observe(self.on_colormap_change, names='value')
 
             # --- Rotation Slider ---
             self.rotation_slider = FloatSlider(
@@ -145,15 +194,15 @@ class MSIVisualizer:
                 continuous_update=False,
                 orientation='horizontal'
             )
-            self.rotation_slider.observe(self._on_rotation_change, names='value')
+            self.rotation_slider.observe(self.on_rotation_change, names='value')
 
-            self.image_controls = VBox([HBox([self.mz_slider, self.mz_text, self.norm_checkbox, self.colormap_dropdown, self.rotation_slider]), 
-                                    self.intensity_range_slider])
+            self.image_controls = VBox([HBox([self.mz_slider, self.mz_text, self.norm_checkbox, self.colormap_dropdown, self.rotation_slider]),
+                                     self.intensity_range_slider])
 
             # Connect widget events
-            self.mz_slider.observe(self._on_mz_change, names='value')
-            self.mz_text.observe(self._on_mz_change, names='value')
-            self.norm_checkbox.on_click(self._on_norm_change)
+            self.mz_slider.observe(self.on_mz_change, names='value')
+            self.mz_text.observe(self.on_mz_change, names='value')
+            self.norm_checkbox.on_click(self.on_norm_change)
 
             self.msi_tab = VBox([self.image_controls, self.fig])
 
@@ -162,22 +211,23 @@ class MSIVisualizer:
             time.sleep(0.1)
 
             self.spectrum_fig = go.FigureWidget(
-                data=[], # Data will be set in update_spectrum_plot
+                data=[],
                 layout=go.Layout(
                     title='Average Mass Spectrum',
                     xaxis_title='m/z',
                     yaxis_title='Intensity',
-                    yaxis_tickformat=".2e",  # Scientific notation for intensity
+                    yaxis_tickformat=".2e",
                     height=600,
                     width=800,
                     showlegend=False,
                     margin=dict(l=50, r=50, t=50, b=50)
                 )
             )
-            self.initial_spectrum_xaxis_range = [min(self.full_mz), max(self.full_mz)] # Store initial zoom range
-            self.spectrum_fig.layout.xaxis.range = self.initial_spectrum_xaxis_range # Set initial range
 
-            self.spectrum_fig.layout.xaxis.on_change(self._update_peak_labels, 'range')
+            self.initial_spectrum_xaxis_range = [min(self.full_mz), max(self.full_mz)]
+            self.spectrum_fig.layout.xaxis.range = self.initial_spectrum_xaxis_range
+
+            self.spectrum_fig.layout.xaxis.on_change(self.on_peak_labels_change, 'range')
 
             # Initialize label toggle button
             self.label_toggle = Button(
@@ -188,19 +238,19 @@ class MSIVisualizer:
                 tooltip='Toggle visibility of m/z labels on the spectrum',
                 icon='check'  # (FontAwesome names without the `fa-` prefix)
             )
-            self.label_toggle.on_click(self._on_label_toggle)
+            self.label_toggle.on_click(self.on_label_toggle)
 
             # --- Peak Threshold Slider ---
             self.peak_threshold_slider = FloatSlider(
                 value=self.peak_threshold_value,
                 min=0,
-                max=5000, # Adjusted max value
-                step=50,  # Adjusted step
+                max=10000,
+                step=50,
                 description='Peak Threshold:',
                 continuous_update=False,
                 orientation='horizontal'
             )
-            self.peak_threshold_slider.observe(self._on_peak_threshold_change, names='value')
+            self.peak_threshold_slider.observe(self.on_peak_threshold_change, names='value')
 
             # --- Spectrum Plot Type Dropdown ---
             self.spectrum_plot_type_dropdown = Dropdown(
@@ -209,38 +259,45 @@ class MSIVisualizer:
                 description='Plot Type:',
                 layout=Layout(width='150px')
             )
-            self.spectrum_plot_type_dropdown.observe(self._on_spectrum_plot_type_change, names='value')
+            self.spectrum_plot_type_dropdown.observe(self.on_spectrum_plot_type_change, names='value')
 
             # --- Reset Zoom Button ---
             self.reset_zoom_button = Button(
                 description='Reset Zoom',
                 layout=Layout(width='150px')
             )
-            self.reset_zoom_button.on_click(self._on_reset_zoom_clicked)
+            self.reset_zoom_button.on_click(self.on_reset_zoom_clicked)
 
-            self.spectrum_controls = VBox([HBox([self.label_toggle, self.peak_threshold_slider, self.spectrum_plot_type_dropdown, self.reset_zoom_button])]) # Include reset zoom button
+            self.spectrum_controls = VBox([
+                HBox([self.label_toggle, self.peak_threshold_slider, self.spectrum_plot_type_dropdown, self.reset_zoom_button]),
+                HBox([self.label_color_dropdown, self.label_fontsize_slider, self.peak_properties_dropdown]),
+                HBox([self.baseline_correction_dropdown, self.noise_reduction_dropdown])
+            ])
             self.spectrum_tab = VBox([self.spectrum_controls, self.spectrum_fig])
 
             # Create tab container with proper titles
             self.tab = Tab()
-            self.peak_table_tab = VBox() # Placeholder for Peak Table tab
-            self.tab.children = [self.msi_tab, self.spectrum_tab, self.peak_table_tab] # Include peak_table_tab
+            self.peak_table_tab = VBox()
+            self.tab.children = [self.msi_tab, self.spectrum_tab, self.peak_table_tab]
             self.tab.set_title(0, 'MSI Image')
             self.tab.set_title(1, 'Mass Spectrum')
-            self.tab.set_title(2, 'Peak Table') # Now index 2 should be valid
+            self.tab.set_title(2, 'Peak Table')
 
             # Display the tabbed interface
             display(self.tab)
 
             # Initialize plot with better default view
             self.update_plot()
-            self.update_spectrum_plot() # Initialize spectrum plot
+            self.update_spectrum_plot()
 
             # Dynamically update intensity slider max based on data
             self.update_intensity_range_slider()
 
             # Final progress update
             self.update_progress(value=1.0, description="Loading complete!")
+
+            # Attach click event handler to the spectrum figure
+            self.spectrum_fig.on_click(self.on_spectrum_peak_click_handler)
 
         except Exception as e:
             raise RuntimeError(f"Failed to initialize MSI visualizer: {str(e)}")
@@ -308,7 +365,7 @@ class MSIVisualizer:
         return combined_mz, avg_intensity
 
     def get_mz_range(self):
-        """Get the m/z range from the first spectrum"""
+        """Get the m/z range from the first spectrum."""
         try:
             mz_values, _ = self.parser.getspectrum(0)
             return min(mz_values), max(mz_values)
@@ -328,18 +385,13 @@ class MSIVisualizer:
             try:
                 mz_values, intensities = self.parser.getspectrum(i)
                 mask = (mz_values >= mz_mask[0]) & (mz_values <= mz_mask[1])
-
                 if np.any(mask):
-                    intensity = np.sum(intensities[mask]) # Corrected: Use summed intensity when mask is True
+                    intensity = np.sum(intensities[mask])
                     if normalize:
                         tic = np.sum(intensities)
-                        print(f"Spectrum {i}: TIC = {tic:.2f}, Raw Intensity = {intensity:.2f}")
                         intensity = intensity / tic if tic > 0 else 0
-                        print(f"After normalization: {intensity:.2f}")
-
-                else: # No m/z values in range, set intensity to 0
+                else:
                     intensity = 0
-
                 intensity_map.append(intensity)
 
             except Exception as e:
@@ -349,7 +401,7 @@ class MSIVisualizer:
         return np.array(x_coords), np.array(y_coords), np.array(intensity_map)
 
     def update_plot(self):
-        """Update the MSI image visualization"""
+        """Update the MSI image visualization."""
         try:
             self.fig.data = []
 
@@ -360,13 +412,13 @@ class MSIVisualizer:
             )
 
             # Correct Y-coordinate orientation (image not upside down)
-            y_coords_corrected = np.array(y) # Ensure it's a numpy array
-            y_coords_corrected = np.max(y_coords_corrected) - y_coords_corrected # Reverse Y-coordinates
+            y_coords_corrected = np.array(y)
+            y_coords_corrected = np.max(y_coords_corrected) - y_coords_corrected
 
             # --- Rotation logic ---
-            center_x = (np.max(x) + np.min(x)) / 2  # Calculate center of image
+            center_x = (np.max(x) + np.min(x)) / 2
             center_y = (np.max(y_coords_corrected) + np.min(y_coords_corrected)) / 2
-            angle_rad = np.radians(self.current_rotation_angle) # Convert degrees to radians
+            angle_rad = np.radians(self.current_rotation_angle)
             rotated_x = (x - center_x) * np.cos(angle_rad) - (y_coords_corrected - center_y) * np.sin(angle_rad) + center_x
             rotated_y = (x - center_x) * np.sin(angle_rad) + (y_coords_corrected - center_y) * np.cos(angle_rad) + center_y
 
@@ -377,19 +429,19 @@ class MSIVisualizer:
 
             # Calculate optimal zoom level
             x_range = max(x) - min(x)
-            y_range = max(y) - min(y_coords_corrected) # Use corrected y range
+            y_range = max(y) - min(y_coords_corrected)
             padding = max(x_range, y_range) * 0.1
 
             # Create heatmap-like visualization with no gaps
             scatter = go.Scatter(
-                x=rotated_x, # Use rotated x coordinates
-                y=rotated_y, # Use rotated y coordinates
+                x=rotated_x,
+                y=rotated_y,
                 mode='markers',
                 marker=dict(
                     symbol='square',
                     size=15,
                     color=intensity,
-                    colorscale=self.current_colormap, # Use selected colormap
+                    colorscale=self.current_colormap,
                     showscale=True,
                     colorbar=dict(title='Intensity'),
                     line=dict(width=0)
@@ -399,7 +451,7 @@ class MSIVisualizer:
 
             self.fig.add_trace(scatter)
 
-            # Set optimal view with native dimensions (adjust y-range for corrected coords)
+            # Set optimal view with native dimensions
             self.fig.update_layout(
                 title=f'MSI Image for m/z {self.current_mz:.2f}',
                 xaxis=dict(
@@ -409,9 +461,9 @@ class MSIVisualizer:
                     zeroline=False
                 ),
                 yaxis=dict(
-                    range=[min(rotated_y)-padding, max(rotated_y)+padding], # Use rotated y range
+                    range=[min(rotated_y)-padding, max(rotated_y)+padding],
                     autorange=False,
-                    scaleanchor='x',  # To maintain square pixels even with rotation, scale Y axis to match X
+                    scaleanchor='x',
                     scaleratio=1,
                     showgrid=False,
                     zeroline=False
@@ -423,73 +475,112 @@ class MSIVisualizer:
             print(f"Error updating MSI image plot: {str(e)}")
 
     def update_spectrum_plot(self):
-        """Updates the spectrum visualization based on selected plot type."""
+        """Updates the spectrum visualization based on selected plot type and preprocessing."""
         try:
-            with self.spectrum_fig.batch_update(): # Use batch_update for efficiency
-                self.spectrum_fig.data = [] # Clear existing spectrum data
-                spectrum_trace = None # Initialize
+            # Apply preprocessing
+            processed_intensity = self.apply_spectrum_preprocessing(self.original_avg_intensity.copy())
+
+            with self.spectrum_fig.batch_update():
+                self.spectrum_fig.data = []
+                spectrum_trace = None
 
                 if self.spectrum_plot_type == 'line':
                     spectrum_trace = go.Scatter(
-                        x=self.full_mz, y=self.avg_intensity, mode='lines',
-                        text=[""] * len(self.full_mz),
-                        hoverinfo='x+y',
-                        name='Spectrum' # Name for legend if needed in future
+                        x=self.full_mz, y=processed_intensity, mode='lines',
+                        text=[""] * len(self.full_mz), hoverinfo='x+y',
+                        name='Spectrum'
                     )
                 elif self.spectrum_plot_type == 'area':
                     spectrum_trace = go.Scatter(
-                        x=self.full_mz, y=self.avg_intensity, mode='lines',
-                        fill='tozeroy', # Fill to zero baseline
-                        text=[""] * len(self.full_mz),
-                        hoverinfo='x+y',
+                        x=self.full_mz, y=processed_intensity, mode='lines',
+                        fill='tozeroy',
+                        text=[""] * len(self.full_mz), hoverinfo='x+y',
                         name='Spectrum'
                     )
-                elif self.spectrum_plot_type == 'centroid': # Centroid stick plot type - Renamed in dropdown
+                elif self.spectrum_plot_type == 'centroid':
                     x_stick = []
                     y_stick = []
-                    for mz, intensity in zip(self.full_mz, self.avg_intensity):
-                        x_stick.extend([mz, mz, None]) # mz, mz, None to break lines
-                        y_stick.extend([0, intensity, None]) # 0, intensity, None to break lines
+                    for mz, intensity in zip(self.full_mz, processed_intensity):
+                        x_stick.extend([mz, mz, None])
+                        y_stick.extend([0, intensity, None])
                     spectrum_trace = go.Scatter(
-                        x=x_stick, y=y_stick, mode='lines', # Use lines for sticks
-                        line=dict(color='blue', width=1), # Customize stick appearance
-                        hoverinfo='x+y',
-                        name='Centroid Spectrum' # Updated name for legend
+                        x=x_stick, y=y_stick, mode='lines',
+                        line=dict(color='blue', width=1), hoverinfo='x+y',
+                        name='Centroid Spectrum'
                     )
 
-                else:
-                    print(f"Warning: Unknown spectrum plot type: {self.spectrum_plot_type}")
-                    return # Exit if plot type is invalid
+                if spectrum_trace:
+                    self.spectrum_fig.add_trace(spectrum_trace)
+                self.on_peak_labels_change()
 
-                if spectrum_trace: # Only add trace if it was created successfully
-                    self.spectrum_fig.add_trace(spectrum_trace) # Add the selected trace type
-
-                self.update_peak_labels() # Make sure labels are updated for the new plot
-                self.update_spectrum_highlight() # Re-highlight current m/z
+                self.spectrum_fig.update_layout(
+                    title='Average Mass Spectrum',
+                    yaxis_title='Intensity',
+                    yaxis_tickformat=".2e",
+                    xaxis_range=self.spectrum_fig.layout.xaxis.range
+                )
 
         except Exception as e:
             print(f"Error updating spectrum plot: {str(e)}")
 
-    def _on_mz_change(self, change):
-        """Handle m/z value changes from widgets"""
-        try:
-            print(f"m/z change event: {change}")
-            if isinstance(change['owner'], FloatSlider):
-                self.current_mz = change['new']
+    def apply_spectrum_preprocessing(self, intensity_data):
+        """Applies selected preprocessing steps to the spectrum intensity data."""
+        processed_intensity = intensity_data.copy()
+
+        # Baseline Correction
+        baseline_method = self.baseline_correction_dropdown.value
+        if baseline_method == 'Detrend':
+            processed_intensity = detrend(processed_intensity)
+
+        # Noise Reduction
+        noise_reduction_method = self.noise_reduction_dropdown.value
+        if noise_reduction_method == 'Savitzky-Golay':
+            try:
+                processed_intensity = savgol_filter(processed_intensity, window_length=5, polyorder=3)
+            except Exception as e:
+                print(f"Warning: Savitzky-Golay filter failed: {e}. Skipping noise reduction.")
+
+        return processed_intensity
+
+    def update_intensity_range_slider(self):
+        """Updates the range of the intensity slider based on current image."""
+        x, y, intensity = self.generate_image_data(
+            self.current_mz,
+            self.normalize
+        )
+        max_intensity = np.max(intensity) if intensity.size > 0 else 1000
+        self.intensity_range_slider.max = max_intensity
+        self.intensity_range_slider.step = max_intensity / 100 if max_intensity > 0 else 10
+        if self.normalize:
+            self.intensity_range_slider.value = [0, 1]
+        else:
+            self.intensity_range_slider.value = [0, max_intensity]
+
+    def on_mz_change(self, change):
+        """Handles m/z slider and text input changes."""
+        source_widget = change.owner
+        new_mz_value = None
+
+        if source_widget == self.mz_slider:
+            new_mz_value = change.new
+            self.mz_text.value = str(new_mz_value)
+        elif source_widget == self.mz_text:
+            try:
+                new_mz_value = float(change.new)
+                self.mz_slider.value = new_mz_value
+            except ValueError:
+                print("Invalid m/z value. Please enter a number.")
                 self.mz_text.value = str(self.current_mz)
-            else:
-                self.current_mz = float(change['new'])
-                self.mz_slider.value = self.current_mz
+                return
+
+        if new_mz_value is not None:
+            self.current_mz = new_mz_value
             self.update_plot()
-            self.update_spectrum_highlight() # Keep highlight in sync with m/z change
 
-        except ValueError:
-            print("Invalid m/z value. Please enter a number.")
-
-    def _on_norm_change(self, b):
-        """Handle normalization toggle"""
+    def on_norm_change(self, button):
+        """Handles TIC normalization toggle."""
         try:
-            print(f"Button clicked: {b}")
+            print(f"Button clicked: {button}")
             print(f"Current normalize state: {self.normalize}")
 
             # Toggle the state
@@ -504,145 +595,129 @@ class MSIVisualizer:
             self.update_plot()
 
         except Exception as e:
-            print(f"Error in _on_norm_change: {str(e)}")
+            print(f"Error in on_norm_change: {str(e)}")
 
-    def _on_label_toggle(self, b):
-        """Handle label toggle button click"""
-        self.show_labels = not self.show_labels
-        self.update_peak_labels()
-
-    def _on_intensity_range_change(self, change):
-        """Handle changes to the intensity range slider."""
+    def on_intensity_range_change(self, change):
+        """Handles intensity range slider changes."""
         self.intensity_range = change['new']
         self.update_plot()
 
-    def _on_peak_threshold_change(self, change):
-        """Handle changes to the peak threshold slider."""
-        self.peak_threshold_value = change['new']
-        self.update_peak_labels() # Re-evaluate and update peak labels
-
-    def _on_spectrum_plot_type_change(self, change):
-        """Handle changes to the spectrum plot type dropdown."""
-        self.spectrum_plot_type = change['new']
-        self.update_spectrum_plot() # Update spectrum plot based on new type
-
-    def _on_colormap_change(self, change):
-        """Handle changes to the colormap dropdown."""
+    def on_colormap_change(self, change):
+        """Handles colormap dropdown changes."""
         self.current_colormap = change['new']
-        self.update_plot() # Update MSI image plot with new colormap
+        self.update_plot()
 
-    def _on_rotation_change(self, change):
-        """Handle changes to the rotation slider."""
+    def on_rotation_change(self, change):
+        """Handles rotation slider changes."""
         self.current_rotation_angle = change['new']
-        self.update_plot() # Update MSI image plot with rotation
+        self.update_plot()
 
-    def _on_reset_zoom_clicked(self, b):
-        """Handle reset zoom button click."""
-        self.spectrum_fig.layout.xaxis.range = self.initial_spectrum_xaxis_range # Reset to initial range
+    def on_label_toggle(self, button):
+        """Handles label toggle button click."""
+        self.show_labels = not self.show_labels
+        self.update_peak_labels()
 
-    def set_intensity_range_slider(self):
-        """Updates the range of the intensity slider"""
-        if self.normalize:
-            self.intensity_range_slider.min = 0
-            self.intensity_range_slider.max = 1
-            self.intensity_range_slider.step = 0.01
-            self.intensity_range_slider.value = [0,1]
-        else:
-            pass
+    def on_peak_threshold_change(self, change):
+        """Handles peak threshold slider changes."""
+        self.peak_threshold_value = change['new']
+        self.on_peak_labels_change()
 
-    def update_intensity_range_slider(self):
-        """Updates the range of the intensity slider based on current image."""
-        x, y, intensity = self.generate_image_data(
-            self.current_mz,
-            self.normalize
-        )
-        max_intensity = np.max(intensity) if intensity.size > 0 else 1000 # Handle empty intensity array
-        self.intensity_range_slider.max = max_intensity
-        self.intensity_range_slider.step = max_intensity / 100 if max_intensity > 0 else 10 # Avoid division by zero, set a default step
-        if self.normalize: # Reset range to [0, 1] for normalized data
-            self.intensity_range_slider.value = [0,1]
-        else:
-            self.intensity_range_slider.value = [0, max_intensity]
+    def on_spectrum_plot_type_change(self, change):
+        """Handles spectrum plot type dropdown change."""
+        self.spectrum_plot_type = change['new']
+        self.update_spectrum_plot()
 
-    def set_mz(self, mz_value):
-        """Set the m/z value and update the plot"""
-        if self.mz_min <= mz_value <= self.mz_max:
-            self.current_mz = mz_value
-            self.mz_slider.value = mz_value
-            self.mz_text.value = str(mz_value)
-            self.update_plot()
-            self.update_spectrum_highlight() # Keep highlight in sync with m/z change
-        else:
-            print(f"Warning: m/z value must be between {self.mz_min:.2f} and {self.mz_max:.2f}")
+    def on_reset_zoom_clicked(self, button):
+        """Handles reset zoom button click."""
+        self.spectrum_fig.layout.xaxis.range = self.initial_spectrum_xaxis_range
 
-    def update_spectrum_highlight(self):
-        """Highlights the current m/z in the spectrum viewer."""
-        # Find the index of the m/z value closest to current_mz
-        index = np.argmin(np.abs(self.full_mz - self.current_mz))
+    def on_peak_label_change(self, change):
+        """Handles changes to peak label customization widgets."""
+        self.on_peak_labels_change()
 
-        # Create a new trace for the highlighted point
-        highlight_trace = go.Scatter(
-            x=[self.full_mz[index]],
-            y=[self.avg_intensity[index]],
-            mode='markers',
-            marker=dict(color='red', size=10),
-            name='Selected m/z'
-        )
+    def on_preprocess_change(self, change):
+        """Handles changes to spectrum preprocessing dropdowns."""
+        self.update_spectrum_plot()
 
-        # Update the spectrum plot with the highlighted point
+    def on_peak_labels_change(self):
+        """Updates peak labels on the spectrum plot."""
+        visible_peaks = self.find_peaks_in_view()
+
         with self.spectrum_fig.batch_update():
-            # Ensure base spectrum is always first, highlight second
-            current_data = self.spectrum_fig.data
-            base_spectrum = current_data[0] if current_data else None # Keep base spectrum
-            self.spectrum_fig.data = [] # Clear traces
-            if base_spectrum:
-                self.spectrum_fig.add_trace(base_spectrum) # Re-add base spectrum
-            self.spectrum_fig.add_trace(highlight_trace) # Add highlight trace
+            # Remove any existing peak labels
+            if self.spectrum_fig.data:
+                existing_annotations = list(self.spectrum_fig.layout.annotations) or []
+                for annotation in existing_annotations:
+                    if annotation.name == 'peak_label':
+                        self.spectrum_fig.layout.annotations = tuple(a for a in self.spectrum_fig.layout.annotations if a.name != 'peak_label')
 
-    def _update_peak_labels(self, change=None):
-        """Updates the peak labels based on the current zoom level and peak threshold."""
-        try:
-            if change is not None:
-                mz_range = change['new']  # get new mz range
-            else:
-                mz_range = [self.spectrum_fig.layout.xaxis.range[0], 
-                          self.spectrum_fig.layout.xaxis.range[1]]
-
-            min_mz, max_mz = mz_range[0], mz_range[1]
-
-            # Determine which peaks are within the current zoom range
-            visible_indices = np.where((self.full_mz >= min_mz) & (self.full_mz <= max_mz))[0]
-            visible_mz = self.full_mz[visible_indices]
-            visible_intensity = self.avg_intensity[visible_indices]
-
-            # Find peaks using scipy.signal.find_peaks, using user-defined threshold
-            peaks, _ = find_peaks(visible_intensity, height=self.peak_threshold_value)
-
-            # Prepare the text labels, only showing labels for peaks, depending on show_labels
             if self.show_labels:
-                text_labels = [""] * len(visible_mz)  # Initialize with empty strings
-                for i, peak_index in enumerate(peaks):
-                    text_labels[peak_index] = f'{visible_mz[peak_index]:.5f}'  # Set text label for peaks above the threshold
-            else:
-                text_labels = [""] * len(visible_mz)
+                annotations = []
+                for peak_mz, peak_intensity in visible_peaks:
+                    label_text_parts = []
+                    if 'm/z' in self.peak_properties_dropdown.value:
+                        label_text_parts.append(f"m/z: {peak_mz:.2f}")
+                    if 'm/z + intensity' in self.peak_properties_dropdown.value:
+                        label_text_parts.append(f"m/z: {peak_mz:.2f}<br>Intensity: {peak_intensity:.2e}")
+                    label_text = "<br>".join(label_text_parts)
 
-            # Update the trace with the new labels
-            with self.spectrum_fig.batch_update():
-                # Ensure base spectrum is always first, labels are next
-                current_data = self.spectrum_fig.data
-                base_spectrum = current_data[0] if current_data else None # Keep base spectrum
-                self.spectrum_fig.data = [] # Clear traces
-                if base_spectrum:
-                    self.spectrum_fig.add_trace(base_spectrum) # Re-add base spectrum
-                if len(visible_mz) > 0:  # Only add labels if there are visible peaks
-                    self.spectrum_fig.add_trace(go.Scatter(x=visible_mz, y=visible_intensity,
-                                  mode='text',  # Only text mode
-                                  text=text_labels,
-                                  textposition='top center',
-                                  hoverinfo='skip'))
+                    annotation = go.layout.Annotation(
+                        x=peak_mz,
+                        y=peak_intensity,
+                        text=label_text,
+                        showarrow=True,
+                        arrowhead=1,
+                        arrowsize=1,
+                        arrowwidth=1,
+                        arrowcolor=self.label_color_dropdown.value,
+                        ax=0,
+                        ay=-40,
+                        font=dict(
+                            color=self.label_color_dropdown.value,
+                            size=self.label_fontsize_slider.value
+                        ),
+                        align='center',
+                        name='peak_label'
+                    )
+                    annotations.append(annotation)
 
-        except Exception as e:
-            print(f"Error updating peak labels: {e}")
+                self.spectrum_fig.layout.annotations = tuple(annotations)
 
-# Usage example
-visualizer = MSIVisualizer()
+    def find_peaks_in_view(self):
+        """Finds peaks in the average spectrum that are within the current x-axis range."""
+        current_xaxis_range = self.spectrum_fig.layout.xaxis.range
+        mask = (self.full_mz >= current_xaxis_range[0]) & (self.full_mz <= current_xaxis_range[1])
+        mz_in_view = self.full_mz[mask]
+        intensity_in_view = self.avg_intensity[mask]
+
+        if not mz_in_view.size:
+            return []
+
+        peak_indices = find_peaks(intensity_in_view, height=self.peak_threshold_value)[0]
+
+        peaks = []
+        for index in peak_indices:
+            peak_mz = mz_in_view[index]
+            peak_intensity = intensity_in_view[index]
+            peaks.append((peak_mz, peak_intensity))
+
+        return peaks
+
+    def on_spectrum_peak_click_handler(self, event):
+        """Handles clicks on peaks in the spectrum plot."""
+        if not event:
+            return
+
+        if len(event.points) > 0:
+            point = event.points[0]
+            clicked_mz = point['x']
+            self.mz_slider.value = clicked_mz
+            self.mz_text.value = str(clicked_mz)
+
+if __name__ == '__main__':
+    try:
+        MSIVisualizer()
+    except FileNotFoundError:
+        print("No file selected. Visualizer initialization cancelled.")
+    except RuntimeError as e:
+        print(f"Initialization error: {e}")

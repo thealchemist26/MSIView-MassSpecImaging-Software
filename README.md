@@ -2,216 +2,227 @@ The MSIVisualizer is a Python class that provides an interactive visualization t
 
 ###  System Architecture
 
-The MSIVisualizer implements a modular architecture with clear separation of concerns between data processing, visualization, and user interface components. Here's the high-level architecture:
+The MSIView implements a modular architecture with clear separation of concerns between data processing, visualization, and user interface components. Here's the high-level architecture:
 
+This is a comprehensive documentation for the Mass Spectrometry Imaging (MSI) Visualizer, a sophisticated tool for analyzing and visualizing mass spectrometry imaging data. The visualizer provides an interactive interface for exploring MSI data through both spatial and spectral views.
+
+###  Overview
+
+The MSIVisualizer class creates an interactive visualization environment that combines:
+
+- Spatial visualization of MSI data
+- Mass spectrum analysis
+- Peak detection and labeling
+- Data preprocessing capabilities
+- Interactive controls for real-time exploration
+
+Let's visualize the architecture and data flow:
 ```mermaid
 flowchart TD
-    subgraph Input["Input Layer"]
-        File["imzML File"]
+    subgraph Input["Input Processing"]
+        File["imzML File"] --> Parser["ImzMLParser"]
+        Parser --> Data["Raw MSI Data"]
     end
 
-    subgraph Processing["Processing Layer"]
-        Parser["ImzMLParser"]
-        Data["Data Processing"]
-        Progress["Progress Tracking"]
+    subgraph Controls["Interactive Controls"]
+        direction TB
+        MZ["m/z Controls"]
+        Pre["Preprocessing"]
+        Vis["Visualization"]
+        
+        MZ -->|"Updates"| Plot
+        Pre -->|"Applies"| Data
+        Vis -->|"Configures"| Plot
     end
 
-    subgraph Visualization["Visualization Layer"]
-        MSI["MSI Image View"]
-        Spectrum["Spectrum View"]
-        Controls["User Controls"]
+    subgraph Processing["Data Processing"]
+        direction TB
+        Norm["Normalization"]
+        Filter["Noise Reduction"]
+        Peak["Peak Detection"]
     end
 
-    subgraph Components["Component Layer"]
-        GUI["GUI Elements"]
-        Plots["Plot Generation"]
-        Events["Event Handling"]
+    subgraph Output["Visualization"]
+        direction TB
+        Plot["Interactive Plot"]
+        Spec["Spectrum View"]
+        Table["Peak Table"]
     end
 
-    File --> Parser
-    Parser --> Data
-    Data --> MSI
-    Data --> Spectrum
-    MSI --> Controls
-    Spectrum --> Controls
-    Controls --> GUI
-    GUI --> Events
-    Events --> MSI
-    Events --> Spectrum
-    Progress --> Controls
+    Data --> Processing
+    Processing --> Plot
+    Processing --> Spec
+    Processing --> Table
 
     classDef input fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#000
-    classDef process fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
-    classDef visual fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#000
-    classDef component fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef control fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef process fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#000
+    classDef output fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#000
 
-    class File input
-    class Parser,Data,Progress process
-    class MSI,Spectrum,Controls visual
-    class GUI,Plots,Events component
+    class File,Parser,Data input
+    class MZ,Pre,Vis control
+    class Norm,Filter,Peak process
+    class Plot,Spec,Table output
 ```
 
-The diagram above illustrates the four main layers of the MSIVisualizer system:
 
-- **Input Layer** (blue): Handles the loading of imzML files, the standard format for MSI data
-- **Processing Layer** (orange): Manages data parsing and processing, including progress tracking for large datasets
-- **Visualization Layer** (purple): Contains the core visualization components for both MSI images and mass spectra
-- **Component Layer** (green): Handles user interactions and event processing
 
-Data flows from top to bottom through these layers, with user interactions triggering updates that flow back up through the system. The Progress Tracking component ensures users are informed about long-running operations.
 
-###  Class Structure
+The diagram above illustrates the visualizer's architecture, where:
 
-The MSIVisualizer class implements this architecture through a structured set of methods and attributes. Here's the class structure:
+- Blue components handle input data processing
+- Orange sections represent user controls that drive the visualization
+- Purple shows the data processing pipeline
+- Green indicates the final visualization outputs
 
-```mermaid
-classDiagram
-    class MSIVisualizer {
-        +root: tk.Tk
-        +progress_bar: FloatProgress
-        +status_label: Label
-        +file_path: str
-        +parser: ImzMLParser
-        +coord_count: int
-        +mz_min: float
-        +mz_max: float
-        +full_mz: array
-        +avg_intensity: array
-        +current_mz: float
-        +normalize: bool
-        +show_labels: bool
-        +intensity_range: list
-        +peak_threshold_value: float
-        +spectrum_plot_type: str
-        +current_colormap: str
-        +current_rotation_angle: float
-        +fig: FigureWidget
-        +spectrum_fig: FigureWidget
-        +tab: Tab
-        +__init__()
-        +format_file_size(size_bytes)
-        +update_progress(value, description)
-        +calculate_average_spectrum_with_progress()
-        +get_mz_range()
-        +generate_image_data(mz_value, normalize)
-        +update_plot()
-        +update_spectrum_plot()
-        +_on_mz_change(change)
-        +_on_norm_change(b)
-        +_on_label_toggle(b)
-        +_on_intensity_range_change(change)
-        +_on_peak_threshold_change(change)
-        +_on_spectrum_plot_type_change(change)
-        +_on_colormap_change(change)
-        +_on_rotation_change(change)
-        +_on_reset_zoom_clicked(b)
-        +set_intensity_range_slider()
-        +update_intensity_range_slider()
-        +set_mz(mz_value)
-        +update_spectrum_highlight()
-        +_update_peak_labels(change)
-    }
-```
+The Processing section feeds into all visualization components, allowing real-time updates as users adjust controls. The bidirectional arrows between Controls and Plot indicate that user interactions immediately update the visualization, while the plot itself provides feedback through hover information and click events.
 
-The class diagram shows the complete structure of the MSIVisualizer class. Methods prefixed with `_` are intended to be private (internal use), while public methods are used for external interaction. The class maintains several key attributes:
+###  Component Overview
 
-- **GUI Elements**: `root`, `progress_bar`, `status_label` handle the user interface
-- **Data Storage**: `parser`, `full_mz`, `avg_intensity` store the MSI data
-- **Visualization State**: `current_mz`, `normalize`, `intensity_range` track the current view settings
-- **Plot Objects**: `fig` and `spectrum_fig` manage the visual representations
+####  Input Processing
 
-###  Documentation
+- Handles imzML file selection and parsing
+- Manages file size and coordinate information
+- Provides progress tracking during loading
 
-####  Class Description
+####  Interactive Controls
 
-```python
-class MSIVisualizer:
-    """
-    A class for visualizing Mass Spectrometry Imaging (MSI) data from imzML files.
-    
-    Provides interactive visualization of MSI data with both spatial and spectral views.
-    Features include:
-    - Interactive m/z selection
-    - Intensity normalization
-    - Peak detection and labeling
-    - Image rotation and colormap selection
-    - Real-time spectrum updates
-    """
-    def __init__(self):
-        """
-        Initialize the visualizer with GUI file selection and peak threshold control.
-        
-        Creates a tabbed interface with MSI image view, mass spectrum view, and peak table.
-        """
-        # ... initialization code ...
-```
+1. **m/z Controls**  - Slider for selecting specific m/z values
+  - Text input for precise m/z entry
+  - Normalization toggle for TIC (Total Ion Current)
 
-####  Key Methods
 
-```python
+2. **Preprocessing Options**  - Baseline correction (detrend)
+  - Noise reduction (Savitzky-Golay filter)
+  - Intensity range adjustment
+
+
+3. **Visualization Settings**  - Colormap selection
+  - Image rotation control
+  - Peak labeling customization
+
+
+
+####  Visualization Components
+
+1. **MSI Image View**  - Interactive heatmap showing spatial distribution
+  - Real-time updates based on m/z selection
+  - Supports rotation and intensity scaling
+
+
+2. **Mass Spectrum View**  - Displays average mass spectrum
+  - Multiple plot types (line, area, centroid)
+  - Interactive peak detection and labeling
+
+
+3. **Peak Table**  - Organizes detected peaks
+  - Provides detailed peak information
+  - Supports filtering and sorting
+
+
+
+###  Key Features
+
+1. **Data Processing**```python
 def generate_image_data(self, mz_value, normalize=False):
-    """
-    Generate image data for the specified m/z value.
-    
-    Args:
-        mz_value (float): The m/z value to visualize
-        normalize (bool): Whether to normalize intensities by TIC
-        
-    Returns:
-        tuple: (x_coords, y_coords, intensity_map)
-    """
-    # ... implementation ...
-
-def update_spectrum_plot(self):
-    """
-    Updates the spectrum visualization based on selected plot type.
-    
-    Supports line, area, and centroid plot types with peak detection and labeling.
-    """
-    # ... implementation ...
-
-def set_mz(self, mz_value):
-    """
-    Set the m/z value and update the plot.
-    
-    Args:
-        mz_value (float): The m/z value to display (must be within valid range)
-    """
-    # ... implementation ...
+    """Generate image data efficiently."""
+    # Precompute the m/z range mask
+    mz_mask = (mz_value - 0.1, mz_value + 0.1)
+    intensity_map = []
+    for i, _ in enumerate(self.parser.coordinates):
+        try:
+            mz_values, intensities = self.parser.getspectrum(i)
+            mask = (mz_values >= mz_mask[0]) & (mz_values <= mz_mask[1])
+            if np.any(mask):
+                intensity = np.sum(intensities[mask])
+                if normalize:
+                    tic = np.sum(intensities)
+                    intensity = intensity / tic if tic > 0 else 0
+            else:
+                intensity = 0
+            intensity_map.append(intensity)
+        except Exception as e:
+            print(f"Warning: Skipping spectrum {i} due to error: {str(e)}")
+            intensity_map.append(0)
+    return np.array(x_coords), np.array(y_coords), np.array(intensity_map)
 ```
 
-####  Usage Example
 
-```python
-# Create a new visualizer instance
+2. **Peak Detection**```python
+def find_peaks_in_view(self):
+    """Finds peaks in the average spectrum that are within the current x-axis range."""
+    current_xaxis_range = self.spectrum_fig.layout.xaxis.range
+    mask = (self.full_mz >= current_xaxis_range[0]) & (self.full_mz <= current_xaxis_range[1])
+    mz_in_view = self.full_mz[mask]
+    intensity_in_view = self.avg_intensity[mask]
+
+    if not mz_in_view.size:
+        return []
+
+    peak_indices = find_peaks(intensity_in_view, height=self.peak_threshold_value)[0]
+    peaks = []
+    for index in peak_indices:
+        peak_mz = mz_in_view[index]
+        peak_intensity = intensity_in_view[index]
+        peaks.append((peak_mz, peak_intensity))
+
+    return peaks
+```
+
+
+
+###  Usage Guide
+
+1. **Initialization**```python
 visualizer = MSIVisualizer()
-
-# Set a specific m/z value
-visualizer.set_mz(500.0)
-
-# Toggle normalization
-visualizer._on_norm_change(None)  # None is required for the event handler
 ```
 
-###  Features
 
-1. **Interactive Visualization**  - Real-time MSI image updates
-  - Dynamic spectrum display
-  - Peak detection and labeling
-  - Interactive m/z selection
+2. **Basic Navigation**  - Use the m/z slider or text input to explore different mass-to-charge ratios
+  - Toggle TIC normalization for relative intensity comparison
+  - Adjust colormap and rotation for optimal visualization
 
 
-2. **Data Processing**  - Automatic intensity normalization
-  - Progress tracking for large datasets
-  - Efficient spectrum averaging
-  - Peak detection with threshold control
+3. **Spectrum Analysis**  - Click on peaks in the spectrum view to jump to specific m/z values
+  - Use the peak threshold slider to adjust peak detection sensitivity
+  - Customize peak labels through the dropdown menus
 
 
-3. **User Interface**  - Tabbed interface for different views
-  - Interactive sliders and controls
-  - Real-time updates
-  - Progress indicators
+4. **Data Processing**  - Apply baseline correction for drift removal
+  - Use noise reduction for signal smoothing
+  - Adjust intensity ranges for better visualization
 
+
+
+###  Customization Options
+
+1. **Peak Labeling**  - Color selection (black, red, blue, green)
+  - Font size adjustment (8-20 points)
+  - Label content options (m/z, m/z + intensity)
+
+![image](https://github.com/user-attachments/assets/8e3c1a1f-39dc-4450-b038-a63c883dcaea)
+
+
+2. **Visualization Settings**  - Colormap selection (Viridis, Plasma, Rainbow, etc.)
+  - Image rotation (0-360 degrees)
+  - Plot type selection (line, area, centroid)
+
+![image](https://github.com/user-attachments/assets/06eefd2a-5271-48cc-ba1e-0e0ecf3aeb0f)
+
+
+###  Error Handling
+
+The visualizer includes comprehensive error handling:
+
+- File loading validation
+- Spectrum processing error recovery
+- Graceful handling of invalid inputs
+- Progress tracking with error reporting
+
+![image](https://github.com/user-attachments/assets/811f41b7-aad1-4166-aaf0-4c24efd5d26e)
+
+
+This documentation provides a comprehensive guide to using the MSIVisualizer for mass spectrometry imaging data analysis. The interactive nature of the tool, combined with its robust error handling and extensive customization options, makes it an effective platform for MSI data exploration and analysis.
 
 
 ###  Requirements
@@ -256,7 +267,13 @@ Example of the average spectra showing the clozapine peak at m/z 327.14
 
 ![newplot (1)](https://github.com/user-attachments/assets/ad64e83e-dd56-4c35-9531-3b573c6f442f)
 
-Example of MSI visualisation of fingermark section shopwing the ridges at 25 x 25 micron resolution Imaged on the SELECT SERIES MALDI MRT 
+
+Example of MSI visualisation of fingermark section showing the ridges at 25 x 25 micron resolution Imaged on the SELECT SERIES MALDI MRT 
 
 ![newplot (2)](https://github.com/user-attachments/assets/3cc7b225-874b-4639-9fc0-48856864c26b)
+
+Example of MSI visualisation of fingermark  showing the ridges contaminated with Diazepam (m/z 285.07) at 50 x 50 micron resolution Imaged on the SELECT SERIES MALDI MRT
+
+![newplot (4)](https://github.com/user-attachments/assets/b3bc633f-943b-4b94-be20-e5fdb01221c9)
+
 

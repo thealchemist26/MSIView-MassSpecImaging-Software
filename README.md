@@ -247,5 +247,11 @@ visualizer._on_norm_change(None)  # None is required for the event handler
   - Consider using a smaller dataset
   - Check system resources
 
+Example of MSI (showing a 1000 ng/mL spot of clozapine) Imaged on the SELECT SERIES MALDI MRT 
+
+![newplot](https://github.com/user-attachments/assets/51691e6b-c2c1-46a5-9629-d37a83e3e740)
 
 
+Example of the average spectra showing the clozapine peak at m/z 327.14 
+
+![newplot (1)](https://github.com/user-attachments/assets/ad64e83e-dd56-4c35-9531-3b573c6f442f)

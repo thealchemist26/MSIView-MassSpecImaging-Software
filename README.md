@@ -275,4 +275,7 @@ Example of MSI visualisation of fingermark  showing the ridges contaminated with
 
 ![newplot (4)](https://github.com/user-attachments/assets/b3bc633f-943b-4b94-be20-e5fdb01221c9)
 
+Example of MSI visualisation of fingermark showing the ridge details using m/z 299.32 at 50 X 50 micron resolution imaged on the SELECT SERIES MALDI MRT 
+
+![newplot (7)](https://github.com/user-attachments/assets/257d74b9-d0de-4c04-a68b-7a3e4530ed4b)
 

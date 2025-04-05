@@ -1,4 +1,4 @@
-###  MSIView v1.0 (beta)
+###  MSIView v1.1 (beta)
 
 The MSIView is a Python script (Jupyternotebook-based) that provides an interactive visualization tool for Mass Spectrometry Imaging (MSI) data. It combines GUI controls with real-time visualization capabilities to help researchers analyze MSI data through both spatial and spectral views.
 
@@ -17,6 +17,7 @@ The MSIVisualizer class creates an interactive visualization environment that co
 - Peak detection and labeling
 - Data preprocessing capabilities
 - Interactive controls for real-time exploration
+- Separate windowed GUI for operation of software (v1.1 New Feature)
 
 Let's visualize the architecture and data flow:
 ```mermaid
